@@ -28,6 +28,15 @@ export interface Point2D {
   y: number;
 }
 
+export function gcdMany(values: number[]): number {
+  if (values.length === 0) return 0;
+  let result = Math.abs(Math.trunc(values[0]));
+  for (let i = 1; i < values.length; i += 1) {
+    result = gcd(result, Math.abs(Math.trunc(values[i])));
+  }
+  return result;
+}
+
 export function gcd(a: number, b: number): number {
   let left = Math.abs(Math.trunc(a));
   let right = Math.abs(Math.trunc(b));

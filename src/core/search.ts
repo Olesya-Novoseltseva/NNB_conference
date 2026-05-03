@@ -45,6 +45,17 @@ export function countFiniteFieldSearchSpace(variableCount: number, p: number): n
   return Math.trunc(p) ** variableCount;
 }
 
+export function verifyAssignmentInteger(
+  system: Polynomial[],
+  assignment: Assignment,
+): VerificationResult {
+  const values = system.map((polynomial) => evaluateInteger(polynomial, assignment));
+  return {
+    values,
+    isSolution: values.every((value) => value === 0),
+  };
+}
+
 export function bruteForceInteger(
   polynomial: Polynomial,
   variables: string[],
@@ -67,6 +78,34 @@ export function bruteForceInteger(
     checked += 1;
     if (evaluateInteger(polynomial, assignment) === 0) {
       solutions.push(assignment);
+    }
+  }
+
+  return { solutions, checked, total, truncated: false };
+}
+
+export function bruteForceIntegerSystem(
+  system: Polynomial[],
+  variables: string[],
+  limit: number,
+  maxChecks = DEFAULT_SEARCH_LIMIT,
+): SearchResult {
+  const values = Array.from(
+    { length: 2 * Math.max(0, Math.trunc(limit)) + 1 },
+    (_, index) => index - Math.max(0, Math.trunc(limit)),
+  );
+  const total = countIntegerSearchSpace(variables.length, limit);
+  const solutions: Assignment[] = [];
+  let checked = 0;
+
+  for (const assignment of cartesianProduct(variables, values)) {
+    if (checked >= maxChecks) {
+      return { solutions, checked, total, truncated: true };
+    }
+
+    checked += 1;
+    if (system.every((polynomial) => evaluateInteger(polynomial, assignment) === 0)) {
+      solutions.push({ ...assignment });
     }
   }
 

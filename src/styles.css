@@ -497,6 +497,66 @@ code {
   padding: 12px;
 }
 
+.algorithmReports {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.algorithmReportCard {
+  background: #f8faff;
+  border: 1px solid #d0daea;
+  border-radius: 18px;
+  padding: 18px 20px;
+}
+
+.algorithmReportCard header h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.algorithmMeta {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.algorithmResult {
+  margin: 12px 0 0;
+  line-height: 1.5;
+}
+
+.algorithmResult code {
+  word-break: break-word;
+}
+
+.labGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.checkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  margin: 12px 0;
+}
+
+.checkRow label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+  font-weight: 600;
+}
+
+.checkRow input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
 @media (max-width: 860px) {
   main {
     padding: 16px;
@@ -507,6 +567,10 @@ code {
   .comparison,
   .buttonGrid,
   .benchmarkGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .labGrid {
     grid-template-columns: 1fr;
   }
 }

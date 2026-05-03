@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GrowthMeter } from "./components/GrowthMeter";
+import { AlgorithmReportPanel } from "./components/AlgorithmReportPanel";
 import { Panel } from "./components/Panel";
 import { PointGrid } from "./components/PointGrid";
 import { isPrime } from "./core/finiteField";
@@ -20,6 +21,9 @@ import {
   verifyAssignment,
 } from "./core/search";
 import { convert3SatToMq } from "./core/satToMq";
+import { analyzeDiophantineInput, DEFAULT_MODULAR_PRIMES } from "./core/diophantineAnalyzer";
+import { runIntegerAssignmentBenchmark, type DeviceBenchmarkResult } from "./core/deviceBenchmark";
+import type { AnalyzeOptions, DiophantineAnalysisResult } from "./core/diophantineTypes";
 import {
   finiteFieldExamples,
   growthExamples,
@@ -28,10 +32,11 @@ import {
   mqExample,
 } from "./data/examples";
 
-type Screen = "map" | "integers" | "bounded" | "fields" | "mq";
+type Screen = "map" | "integers" | "bounded" | "fields" | "mq" | "lab";
 
 const screens: Array<{ id: Screen; label: string }> = [
   { id: "map", label: "Введение" },
+  { id: "lab", label: "Диофантова лаборатория" },
   { id: "integers", label: "Линейные уравнения в целых числах" },
   { id: "bounded", label: "Перебор в ограниченном окне по Z" },
   { id: "fields", label: "Многочлены и системы над F_p" },
@@ -213,6 +218,14 @@ function App() {
   const [witnessText, setWitnessText] = useState(
     formatAssignment(finiteFieldExamples.gf2System.witness),
   );
+  const [deviceBenchmark, setDeviceBenchmark] = useState<DeviceBenchmarkResult | null>(null);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setDeviceBenchmark(runIntegerAssignmentBenchmark());
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   return (
     <main>
@@ -231,10 +244,12 @@ function App() {
           <strong>Как пользоваться сайтом</strong>
           <span>
             Слева по вкладкам — от простых алгоритмов над{" "}
-            <code>Z</code> к перебору и системам над <code>F_p</code>. В последней
-            вкладке — конспект по H10, наглядные аналогии для NP и MQ и мини-пример
-            сведения 3-SAT к квадратичной системе над <code>GF(2)</code>. Универсального
-            решателя для всех уравнений над <code>Z</code> здесь нет и быть не может.
+            <code>Z</code> к перебору и системам над <code>F_p</code>. Вкладка{" "}
+            <strong>«Диофантова лаборатория»</strong> строит отчёты: какой алгоритм
+            применим, каков ответ или почему он неизвестен. На вкладке про MQ — конспект по
+            H10, аналогии для NP и мини-пример сведения 3-SAT к квадратичной системе над{" "}
+            <code>GF(2)</code>. Универсального решателя для всех уравнений над{" "}
+            <code>Z</code> здесь нет и быть не может.
           </span>
         </div>
       </header>
@@ -253,6 +268,7 @@ function App() {
       </nav>
 
       {screen === "map" ? <MapScreen /> : null}
+      {screen === "lab" ? <DiophantineLabScreen deviceBenchmark={deviceBenchmark} /> : null}
       {screen === "integers" ? (
         <IntegerLinearScreen linear={linear} setLinear={setLinear} />
       ) : null}
@@ -276,6 +292,253 @@ function App() {
       ) : null}
       {screen === "mq" ? <MqScreen /> : null}
     </main>
+  );
+}
+
+function DiophantineLabScreen({
+  deviceBenchmark,
+}: {
+  deviceBenchmark: DeviceBenchmarkResult | null;
+}) {
+  const [systemText, setSystemText] = useState(`14*x + 21*y = 7`);
+  const [domain, setDomain] = useState<"Z" | "Fp">("Z");
+  const [labP, setLabP] = useState(3);
+  const [limitN, setLimitN] = useState(8);
+  const [checksPerSec, setChecksPerSec] = useState(500_000);
+  const [useDeviceSpeed, setUseDeviceSpeed] = useState(true);
+  const [maxChecks, setMaxChecks] = useState(250_000);
+  const [autoAll, setAutoAll] = useState(true);
+  const [fLinear, setFLinear] = useState(true);
+  const [fUni, setFUni] = useState(true);
+  const [fMod, setFMod] = useState(true);
+  const [fEst, setFEst] = useState(true);
+  const [fBounded, setFBounded] = useState(true);
+  const [result, setResult] = useState<DiophantineAnalysisResult | null>(null);
+
+  useEffect(() => {
+    if (useDeviceSpeed && deviceBenchmark) {
+      setChecksPerSec(deviceBenchmark.checksPerSecond);
+    }
+  }, [deviceBenchmark, useDeviceSpeed]);
+
+  const runAnalysis = () => {
+    const flags: AnalyzeOptions["flags"] = autoAll
+      ? {
+          auto: true,
+          linear: true,
+          univariate: true,
+          modular: true,
+          estimate: true,
+          bounded: true,
+        }
+      : {
+          auto: false,
+          linear: fLinear,
+          univariate: fUni,
+          modular: fMod,
+          estimate: fEst,
+          bounded: fBounded,
+        };
+    const effectiveCps =
+      domain === "Z" && useDeviceSpeed && deviceBenchmark
+        ? deviceBenchmark.checksPerSecond
+        : Math.max(1, checksPerSec);
+    const opts: AnalyzeOptions = {
+      domain,
+      p: labP,
+      limitN,
+      checksPerSecond: effectiveCps,
+      maxChecks: Math.max(100, maxChecks),
+      modularPrimes: [...DEFAULT_MODULAR_PRIMES],
+      flags,
+    };
+    setResult(analyzeDiophantineInput(systemText, opts));
+  };
+
+  return (
+    <div className="labGrid">
+      <Panel
+        title="Постановка и параметры"
+        eyebrow="лаборатория: какой алгоритм сработал и что он доказал"
+      >
+        <p className="muted">
+          Уравнения в формате парсера сайта (см. вкладку перебора): переменные,{" "}
+          <code>+ − * ^</code>, один знак <code>=</code>. Несколько строк — система.
+        </p>
+        <label>
+          Система (строки через Enter)
+          <textarea value={systemText} onChange={(e) => setSystemText(e.target.value)} />
+        </label>
+
+        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+          <legend className="muted" style={{ fontWeight: 800, marginBottom: 8 }}>
+            Область
+          </legend>
+          <div className="checkRow">
+            <label>
+              <input
+                type="radio"
+                name="dom"
+                checked={domain === "Z"}
+                onChange={() => setDomain("Z")}
+              />
+              Целые Z
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="dom"
+                checked={domain === "Fp"}
+                onChange={() => setDomain("Fp")}
+              />
+              Конечное поле F_p
+            </label>
+          </div>
+        </fieldset>
+
+        {domain === "Fp" ? (
+          <label>
+            Простое p
+            <input type="number" min={2} value={labP} onChange={(e) => setLabP(Number(e.target.value))} />
+          </label>
+        ) : null}
+
+        {domain === "Z" ? (
+          <>
+            <label>
+              N для окна [-N, N] (перебор и оценка)
+              <input
+                type="number"
+                min={0}
+                max={25}
+                value={limitN}
+                onChange={(e) => setLimitN(Number(e.target.value))}
+              />
+            </label>
+            <p className="muted">
+              {deviceBenchmark ? (
+                <>
+                  Калибровка устройства: ~{deviceBenchmark.checksPerSecond.toLocaleString("ru-RU")}{" "}
+                  проверок/с (цикл {deviceBenchmark.durationMs.toFixed(1)} мс,{" "}
+                  {deviceBenchmark.iterations.toLocaleString("ru-RU")}{" "}
+                  вызовов <code>evaluateInteger</code> по двум уравнениям).
+                </>
+              ) : (
+                <>Калибровка скорости выполняется после загрузки страницы…</>
+              )}
+            </p>
+            <div className="checkRow">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={useDeviceSpeed}
+                  onChange={(e) => setUseDeviceSpeed(e.target.checked)}
+                />
+                Использовать скорость этого устройства для оценки времени перебора
+              </label>
+            </div>
+            <label>
+              Проверок в секунду (вручную, если снята галочка выше)
+              <input
+                type="number"
+                min={1000}
+                step={1000}
+                value={checksPerSec}
+                disabled={useDeviceSpeed}
+                onChange={(e) => setChecksPerSec(Number(e.target.value))}
+              />
+            </label>
+          </>
+        ) : null}
+
+        <label>
+          Лимит проверок (перебор / модули)
+          <input
+            type="number"
+            min={100}
+            step={1000}
+            value={maxChecks}
+            onChange={(e) => setMaxChecks(Number(e.target.value))}
+          />
+        </label>
+
+        <div className="checkRow">
+          <label>
+            <input
+              type="checkbox"
+              checked={autoAll}
+              onChange={(e) => setAutoAll(e.target.checked)}
+            />
+            Авто: все методы для Z
+          </label>
+        </div>
+
+        {!autoAll && domain === "Z" ? (
+          <div className="checkRow">
+            <label>
+              <input type="checkbox" checked={fLinear} onChange={(e) => setFLinear(e.target.checked)} />
+              Линейные / 2×2
+            </label>
+            <label>
+              <input type="checkbox" checked={fUni} onChange={(e) => setFUni(e.target.checked)} />
+              Одна переменная
+            </label>
+            <label>
+              <input type="checkbox" checked={fMod} onChange={(e) => setFMod(e.target.checked)} />
+              Модули
+            </label>
+            <label>
+              <input type="checkbox" checked={fEst} onChange={(e) => setFEst(e.target.checked)} />
+              Оценка окна
+            </label>
+            <label>
+              <input type="checkbox" checked={fBounded} onChange={(e) => setFBounded(e.target.checked)} />
+              Перебор в Z
+            </label>
+          </div>
+        ) : null}
+
+        <div className="buttonRow">
+          <button type="button" onClick={runAnalysis}>
+            Запустить анализ
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setSystemText(`x + y = 5\n2*x - y = 1`)
+            }
+          >
+            Пример 2×2
+          </button>
+          <button
+            type="button"
+            onClick={() => setSystemText(`x^2 - 5*x + 6 = 0`)}
+          >
+            Пример квадратное
+          </button>
+          <button
+            type="button"
+            onClick={() => setSystemText(`2*x + 1 = 0`)}
+          >
+            Пример (модуль 2)
+          </button>
+        </div>
+      </Panel>
+
+      <Panel title="Результаты анализа" eyebrow="отчёты по шагам">
+        {!result ? (
+          <p className="muted">Нажмите «Запустить анализ», чтобы построить отчёты.</p>
+        ) : null}
+        {result?.parseError ? <p className="status bad">{result.parseError}</p> : null}
+        {result?.ok ? (
+          <>
+            <p className="formula">{result.classification}</p>
+            <p className="muted">Система: {result.systemPreview.join(" ; ")}</p>
+            <AlgorithmReportPanel reports={result.reports} />
+          </>
+        ) : null}
+      </Panel>
+    </div>
   );
 }
 
