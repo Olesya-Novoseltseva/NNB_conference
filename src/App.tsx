@@ -2,59 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { GrowthMeter } from "./components/GrowthMeter";
 import { AlgorithmReportPanel } from "./components/AlgorithmReportPanel";
 import { Panel } from "./components/Panel";
-import { PointGrid } from "./components/PointGrid";
 import { isPrime } from "./core/finiteField";
-import { linearSolutionPoints, solveLinearDiophantine } from "./core/numberTheory";
-import {
-  Assignment,
-  Polynomial,
-  collectVariables,
-  evaluateFiniteField,
-  parseEquation,
-  polynomialToString,
-} from "./core/polynomial";
-import {
-  bruteForceFiniteField,
-  bruteForceInteger,
-  countFiniteFieldSearchSpace,
-  countIntegerSearchSpace,
-  verifyAssignment,
-} from "./core/search";
+import { Assignment, Polynomial, evaluateFiniteField, polynomialToString } from "./core/polynomial";
+import { countFiniteFieldSearchSpace, verifyAssignment } from "./core/search";
 import { convert3SatToMq } from "./core/satToMq";
 import { analyzeDiophantineInput, DEFAULT_MODULAR_PRIMES } from "./core/diophantineAnalyzer";
 import { runIntegerAssignmentBenchmark, type DeviceBenchmarkResult } from "./core/deviceBenchmark";
 import type { AnalyzeOptions, DiophantineAnalysisResult } from "./core/diophantineTypes";
-import {
-  finiteFieldExamples,
-  growthExamples,
-  integerSearchExamples,
-  linearExamples,
-  mqExample,
-} from "./data/examples";
+import { growthExamples, mqExample } from "./data/examples";
 
-type Screen = "map" | "integers" | "bounded" | "fields" | "mq" | "lab";
+type Screen = "map" | "lab" | "mq";
 
 const screens: Array<{ id: Screen; label: string }> = [
   { id: "map", label: "Введение" },
   { id: "lab", label: "Диофантова лаборатория" },
-  { id: "integers", label: "Линейные уравнения в целых числах" },
-  { id: "bounded", label: "Перебор в ограниченном окне по Z" },
-  { id: "fields", label: "Многочлены и системы над F_p" },
   { id: "mq", label: "H10, NP и задача MQ" },
 ];
-
-function parseAssignment(input: string): Assignment {
-  return Object.fromEntries(
-    input
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const [name, value] = part.split("=").map((item) => item.trim());
-        return [name, Number(value)];
-      }),
-  );
-}
 
 function formatAssignment(assignment: Assignment): string {
   return Object.entries(assignment)
@@ -206,18 +169,6 @@ function runMqBenchmark(
 
 function App() {
   const [screen, setScreen] = useState<Screen>("map");
-  const [linear, setLinear] = useState(linearExamples.solvable);
-  const [integerEquation, setIntegerEquation] = useState(
-    integerSearchExamples.pellWindow.equation,
-  );
-  const [integerLimit, setIntegerLimit] = useState(integerSearchExamples.pellWindow.limit);
-  const [fieldP, setFieldP] = useState(finiteFieldExamples.gf2System.p);
-  const [fieldSystemText, setFieldSystemText] = useState(
-    finiteFieldExamples.gf2System.equations.join("\n"),
-  );
-  const [witnessText, setWitnessText] = useState(
-    formatAssignment(finiteFieldExamples.gf2System.witness),
-  );
   const [deviceBenchmark, setDeviceBenchmark] = useState<DeviceBenchmarkResult | null>(null);
 
   useEffect(() => {
@@ -243,11 +194,11 @@ function App() {
         <div className="heroCard">
           <strong>Как пользоваться сайтом</strong>
           <span>
-            Слева по вкладкам — от простых алгоритмов над{" "}
-            <code>Z</code> к перебору и системам над <code>F_p</code>. Вкладка{" "}
-            <strong>«Диофантова лаборатория»</strong> строит отчёты: какой алгоритм
-            применим, каков ответ или почему он неизвестен. На вкладке про MQ — конспект по
-            H10, аналогии для NP и мини-пример сведения 3-SAT к квадратичной системе над{" "}
+            Три вкладки: <strong>введение</strong>, затем{" "}
+            <strong>«Диофантова лаборатория»</strong> — единый интерфейс для линейных
+            случаев, перебора в окне по <code>Z</code> и работы над <code>F_p</code> с
+            пошаговыми отчётами. Раздел про <strong>MQ</strong> — конспект по H10, аналогии
+            для NP и мини-пример сведения 3-SAT к квадратичной системе над{" "}
             <code>GF(2)</code>. Универсального решателя для всех уравнений над{" "}
             <code>Z</code> здесь нет и быть не может.
           </span>
@@ -269,27 +220,6 @@ function App() {
 
       {screen === "map" ? <MapScreen /> : null}
       {screen === "lab" ? <DiophantineLabScreen deviceBenchmark={deviceBenchmark} /> : null}
-      {screen === "integers" ? (
-        <IntegerLinearScreen linear={linear} setLinear={setLinear} />
-      ) : null}
-      {screen === "bounded" ? (
-        <BoundedSearchScreen
-          equation={integerEquation}
-          limit={integerLimit}
-          setEquation={setIntegerEquation}
-          setLimit={setIntegerLimit}
-        />
-      ) : null}
-      {screen === "fields" ? (
-        <FiniteFieldScreen
-          p={fieldP}
-          setP={setFieldP}
-          systemText={fieldSystemText}
-          setSystemText={setFieldSystemText}
-          witnessText={witnessText}
-          setWitnessText={setWitnessText}
-        />
-      ) : null}
       {screen === "mq" ? <MqScreen /> : null}
     </main>
   );
@@ -362,8 +292,8 @@ function DiophantineLabScreen({
         eyebrow="лаборатория: какой алгоритм сработал и что он доказал"
       >
         <p className="muted">
-          Уравнения в формате парсера сайта (см. вкладку перебора): переменные,{" "}
-          <code>+ − * ^</code>, один знак <code>=</code>. Несколько строк — система.
+          Уравнения в формате парсера сайта: переменные, <code>+ − * ^</code>, один знак{" "}
+          <code>=</code>. Несколько строк — система.
         </p>
         <label>
           Система (строки через Enter)
@@ -571,286 +501,10 @@ function MapScreen() {
         </article>
       </div>
       <p className="muted" style={{ marginTop: 16 }}>
-        Переключайте вкладки выше: от линейных уравнений и перебора к полю{" "}
-        <code>F_p</code> и разделу про H10, NP и MQ.
+        Дальше откройте <strong>«Диофантову лабораторию»</strong> для экспериментов по{" "}
+        <code>Z</code> и <code>F_p</code>, затем раздел про H10, NP и MQ.
       </p>
     </Panel>
-  );
-}
-
-function IntegerLinearScreen({
-  linear,
-  setLinear,
-}: {
-  linear: { a: number; b: number; c: number; label: string };
-  setLinear: (value: { a: number; b: number; c: number; label: string }) => void;
-}) {
-  const result = useMemo(
-    () => solveLinearDiophantine(linear.a, linear.b, linear.c),
-    [linear],
-  );
-  const points = useMemo(
-    () => linearSolutionPoints(linear.a, linear.b, linear.c, 8),
-    [linear],
-  );
-
-  return (
-    <div className="twoColumn">
-      <Panel title="Ввод коэффициентов a·x + b·y = c" eyebrow="евклид и целые решения">
-        <div className="controls three">
-          <label>
-            a
-            <input
-              type="number"
-              value={linear.a}
-              onChange={(event) =>
-                setLinear({ ...linear, a: Number(event.target.value), label: "custom" })
-              }
-            />
-          </label>
-          <label>
-            b
-            <input
-              type="number"
-              value={linear.b}
-              onChange={(event) =>
-                setLinear({ ...linear, b: Number(event.target.value), label: "custom" })
-              }
-            />
-          </label>
-          <label>
-            c
-            <input
-              type="number"
-              value={linear.c}
-              onChange={(event) =>
-                setLinear({ ...linear, c: Number(event.target.value), label: "custom" })
-              }
-            />
-          </label>
-        </div>
-        <div className="buttonRow">
-          <button type="button" onClick={() => setLinear(linearExamples.solvable)}>
-            Пример с решением
-          </button>
-          <button type="button" onClick={() => setLinear(linearExamples.unsolvable)}>
-            Пример без решения
-          </button>
-        </div>
-        <p className="formula">
-          {linear.a}x + {linear.b}y = {linear.c}
-        </p>
-      </Panel>
-
-      <Panel title="Решение и множество точек на плоскости (x, y)" eyebrow="алгоритм Евклида">
-        {result.hasSolution ? (
-          <>
-            <p className="status good">Решения существуют, потому что gcd делит c.</p>
-            <p>
-              gcd = <strong>{result.gcd}</strong>, частное решение:{" "}
-              <strong>
-                x0={result.x0}, y0={result.y0}
-              </strong>
-            </p>
-            <p className="formula">
-              x = {result.x0} + ({result.stepX})t, y = {result.y0} + ({result.stepY})t
-            </p>
-          </>
-        ) : (
-          <p className="status bad">{result.reason}</p>
-        )}
-        <PointGrid solutions={points} integerLimit={8} />
-      </Panel>
-    </div>
-  );
-}
-
-function BoundedSearchScreen({
-  equation,
-  limit,
-  setEquation,
-  setLimit,
-}: {
-  equation: string;
-  limit: number;
-  setEquation: (value: string) => void;
-  setLimit: (value: number) => void;
-}) {
-  const parsed = useMemo(() => {
-    try {
-      const polynomial = parseEquation(equation);
-      const variables = collectVariables([polynomial]);
-      return { ok: true as const, polynomial, variables };
-    } catch (error) {
-      return { ok: false as const, error: (error as Error).message };
-    }
-  }, [equation]);
-
-  const result = useMemo(() => {
-    if (!parsed.ok) return undefined;
-    return bruteForceInteger(parsed.polynomial, parsed.variables, limit);
-  }, [parsed, limit]);
-
-  return (
-    <div className="twoColumn">
-      <Panel title="Уравнение и граница окна перебора" eyebrow="только выбранный куб [-N, N]^k">
-        <label>
-          Уравнение
-          <textarea value={equation} onChange={(event) => setEquation(event.target.value)} />
-        </label>
-        <label>
-          Граница N для [-N, N]^k
-          <input
-            type="number"
-            min={0}
-            max={20}
-            value={limit}
-            onChange={(event) => setLimit(Number(event.target.value))}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            setEquation(integerSearchExamples.pellWindow.equation);
-            setLimit(integerSearchExamples.pellWindow.limit);
-          }}
-        >
-          Загрузить пример Пелля
-        </button>
-      </Panel>
-
-      <Panel title="Результаты перебора" eyebrow="не путать с общей разрешимостью">
-        {!parsed.ok ? <p className="status bad">{parsed.error}</p> : null}
-        {parsed.ok && result ? (
-          <>
-            <p>
-              Переменные: <strong>{parsed.variables.join(", ") || "нет"}</strong>
-            </p>
-            <p>
-              Проверено {result.checked.toLocaleString("ru-RU")} из{" "}
-              {countIntegerSearchSpace(parsed.variables.length, limit).toLocaleString("ru-RU")}{" "}
-              точек.
-            </p>
-            <p className="status warn">
-              Если решений не найдено, это означает только «не найдено в выбранном окне».
-            </p>
-            <div className="solutionList">
-              {result.solutions.slice(0, 24).map((solution) => (
-                <code key={formatAssignment(solution)}>{formatAssignment(solution)}</code>
-              ))}
-            </div>
-          </>
-        ) : null}
-      </Panel>
-    </div>
-  );
-}
-
-function FiniteFieldScreen({
-  p,
-  setP,
-  systemText,
-  setSystemText,
-  witnessText,
-  setWitnessText,
-}: {
-  p: number;
-  setP: (value: number) => void;
-  systemText: string;
-  setSystemText: (value: string) => void;
-  witnessText: string;
-  setWitnessText: (value: string) => void;
-}) {
-  const parsed = useMemo(() => {
-    try {
-      const system = systemText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map(parseEquation);
-      return { ok: true as const, system, variables: collectVariables(system) };
-    } catch (error) {
-      return { ok: false as const, error: (error as Error).message };
-    }
-  }, [systemText]);
-  const witness = useMemo(() => parseAssignment(witnessText), [witnessText]);
-  const search = useMemo(() => {
-    if (!parsed.ok || !isPrime(p)) return undefined;
-    return bruteForceFiniteField(parsed.system, parsed.variables, p);
-  }, [parsed, p]);
-  const verification = useMemo(() => {
-    if (!parsed.ok || !isPrime(p)) return undefined;
-    return verifyAssignment(parsed.system, witness, p);
-  }, [parsed, witness, p]);
-
-  return (
-    <div className="twoColumn">
-      <Panel title="Поле, система и кандидат на решение" eyebrow="простое p и свидетельство">
-        <label>
-          Простое p
-          <input type="number" min={2} value={p} onChange={(event) => setP(Number(event.target.value))} />
-        </label>
-        <label>
-          Уравнения, по одному в строке
-          <textarea value={systemText} onChange={(event) => setSystemText(event.target.value)} />
-        </label>
-        <label>
-          Свидетельство
-          <input value={witnessText} onChange={(event) => setWitnessText(event.target.value)} />
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            setP(finiteFieldExamples.gf2System.p);
-            setSystemText(finiteFieldExamples.gf2System.equations.join("\n"));
-            setWitnessText(formatAssignment(finiteFieldExamples.gf2System.witness));
-          }}
-        >
-          Загрузить пример над F_2
-        </button>
-      </Panel>
-
-      <Panel title="Размер пространства, проверка свидетельства и поиск" eyebrow="перебор всех векторов из F_p^n">
-        {!isPrime(p) ? <p className="status bad">p должно быть простым числом.</p> : null}
-        {!parsed.ok ? <p className="status bad">{parsed.error}</p> : null}
-        {parsed.ok && search && verification ? (
-          <>
-            <p>
-              Пространство поиска:{" "}
-              <strong>
-                {p}^{parsed.variables.length} ={" "}
-                {countFiniteFieldSearchSpace(parsed.variables.length, p).toLocaleString("ru-RU")}
-              </strong>
-            </p>
-            <p className={verification.isSolution ? "status good" : "status warn"}>
-              Свидетельство {verification.isSolution ? "подходит" : "не подходит"}; значения
-              уравнений: {verification.values.join(", ")}
-            </p>
-            <p>Найдено решений: {search.solutions.length}</p>
-            <div className="solutionList">
-              {search.solutions.slice(0, 24).map((solution) => (
-                <code key={formatAssignment(solution)}>{formatAssignment(solution)}</code>
-              ))}
-            </div>
-            {parsed.variables.length === 2 ? (
-              <PointGrid
-                p={p}
-                solutions={search.solutions}
-                xName={parsed.variables[0]}
-                yName={parsed.variables[1]}
-              />
-            ) : parsed.variables.length > 2 ? (
-              <p className="muted">
-                График на плоскости строится только при <strong>ровно двух</strong>{" "}
-                переменных (оси — первая и вторая в лексикографическом порядке). При{" "}
-                {parsed.variables.length} переменных это уже не полная картина, поэтому
-                сетку мы не показываем; смотрите список векторов-решений выше.
-              </p>
-            ) : null}
-          </>
-        ) : null}
-      </Panel>
-    </div>
   );
 }
 
@@ -1033,7 +687,7 @@ function MqScreen() {
             <strong>не существует одной инструкции</strong>, по которой вы за конечное
             время гарантированно получите «да/нет» для <em>любой</em> коробки. Это не
             значит, что отдельные коробки неразрешимы — отдельные случаи разбираются
-            частными методами (как линейный блок на этом сайте).
+            частными методами (как в <strong>Диофантовой лаборатории</strong>).
           </p>
         </div>
 
@@ -1049,8 +703,8 @@ function MqScreen() {
             <strong>Поиск решения:</strong> если билета нет, но нужно «найти правильный
             набор полей в вагоне», при экспоненциально большом числе комбинаций это уже
             экспедиция. Для NP-трудных семейств мы не знаем универсального быстрого
-            поиска, но знаем быструю <em>верификацию</em> кандидата — как на вкладке с{" "}
-            <code>F_p</code>.
+            поиска, но знаем быструю <em>верификацию</em> кандидата — как в режиме{" "}
+            <code>F_p</code> в <strong>Диофантовой лаборатории</strong>.
           </p>
         </div>
 
