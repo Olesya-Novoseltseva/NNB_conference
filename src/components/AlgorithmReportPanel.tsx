@@ -1,12 +1,21 @@
 import { AlgorithmReport } from "../core/diophantineTypes";
 
 const statusClass: Record<AlgorithmReport["status"], string> = {
-  solved: "status good",
-  "no-solution": "status bad",
-  partial: "status warn",
-  "not-applicable": "muted",
-  "bounded-search": "status warn",
-  "undecidable-general": "theorem",
+  solved: "is-solved",
+  "no-solution": "is-no-solution",
+  partial: "is-partial",
+  "not-applicable": "is-na",
+  "bounded-search": "is-bounded",
+  "undecidable-general": "is-theorem",
+};
+
+const statusLabel: Record<AlgorithmReport["status"], string> = {
+  solved: "решено",
+  "no-solution": "нет решения",
+  partial: "частично",
+  "not-applicable": "неприменимо",
+  "bounded-search": "ограниченный поиск",
+  "undecidable-general": "граница алгоритмов",
 };
 
 export function AlgorithmReportPanel({ reports }: { reports: AlgorithmReport[] }) {
@@ -19,7 +28,9 @@ export function AlgorithmReportPanel({ reports }: { reports: AlgorithmReport[] }
           <header>
             <h3>{r.title}</h3>
             <p className="algorithmMeta">
-              <span className={statusClass[r.status] ?? "muted"}>{r.status}</span>
+              <span className={`reportStatusPill ${statusClass[r.status] ?? "is-na"}`}>
+                {statusLabel[r.status] ?? r.status}
+              </span>
               {r.applicable ? (
                 <>
                   {" · "}

@@ -149,11 +149,49 @@ main {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.comparison article,
 .steps article {
   background: #f3f6fd;
   border-radius: 18px;
   padding: 16px;
+}
+
+.comparisonCard {
+  background: linear-gradient(180deg, #f7f9ff 0%, #eef3ff 100%);
+  border: 1px solid #d6e0f5;
+  border-radius: 18px;
+  padding: 16px;
+  position: relative;
+}
+
+.comparisonCard::before {
+  border-radius: 999px;
+  content: "";
+  display: block;
+  height: 10px;
+  left: 16px;
+  position: absolute;
+  top: 12px;
+  width: 52px;
+}
+
+.comparisonCard h3 {
+  margin-top: 12px;
+}
+
+.comparisonCardZ {
+  border-left: 4px solid #2b4ea9;
+}
+
+.comparisonCardZ::before {
+  background: linear-gradient(90deg, #284bb3, #4f7cf0);
+}
+
+.comparisonCardFp {
+  border-left: 4px solid #1f7c66;
+}
+
+.comparisonCardFp::before {
+  background: linear-gradient(90deg, #16735f, #31ad92);
 }
 
 .buttonGrid {
@@ -497,6 +535,33 @@ code {
   padding: 12px;
 }
 
+.mqRunsGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.mqRunCard {
+  background: #fff;
+  border: 1px solid #dce5f5;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.mqRunCard header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mqRunCard h4 {
+  color: #1e3159;
+  margin: 0;
+}
+
 .algorithmReports {
   display: flex;
   flex-direction: column;
@@ -521,6 +586,44 @@ code {
   font-size: 0.85rem;
 }
 
+.reportStatusPill {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  padding: 0.28rem 0.5rem;
+  text-transform: lowercase;
+  vertical-align: middle;
+}
+
+.reportStatusPill.is-solved {
+  background: #e3f7ec;
+  color: #0f6332;
+}
+
+.reportStatusPill.is-no-solution {
+  background: #ffe7e7;
+  color: #9a1f1f;
+}
+
+.reportStatusPill.is-partial,
+.reportStatusPill.is-bounded {
+  background: #fff3d6;
+  color: #815300;
+}
+
+.reportStatusPill.is-na {
+  background: #ebf0fb;
+  color: #4d6085;
+}
+
+.reportStatusPill.is-theorem {
+  background: #e8ecff;
+  color: #2b3f86;
+}
+
 .algorithmResult {
   margin: 12px 0 0;
   line-height: 1.5;
@@ -533,7 +636,7 @@ code {
 .labGrid {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
 }
 
 .checkRow {
@@ -557,6 +660,67 @@ code {
   margin: 0;
 }
 
+.labPresetSection {
+  background: #f5f8ff;
+  border: 1px solid #d5def2;
+  border-radius: 16px;
+  margin-bottom: 14px;
+  padding: 14px;
+}
+
+.labPresetSection h3 {
+  margin: 0 0 8px;
+}
+
+.labPresetSection .muted {
+  margin: 0 0 10px;
+}
+
+.labPresetList {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.labPresetButton {
+  align-items: flex-start;
+  background: #fff;
+  border: 1px solid #d6e0f5;
+  border-radius: 12px;
+  color: #203257;
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  text-align: left;
+  transform: none;
+}
+
+.labPresetButton:hover {
+  background: #f0f4ff;
+  transform: none;
+}
+
+.labPresetButton strong {
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.labPresetButton span {
+  color: #5d6c8a;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.labPresetButton.active {
+  background: #e9f0ff;
+  border-color: #325fcf;
+  box-shadow: inset 0 0 0 1px #325fcf;
+}
+
 @media (max-width: 860px) {
   main {
     padding: 16px;
@@ -566,7 +730,8 @@ code {
   .twoColumn,
   .comparison,
   .buttonGrid,
-  .benchmarkGrid {
+  .benchmarkGrid,
+  .mqRunsGrid {
     grid-template-columns: 1fr;
   }
 

@@ -1,22 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { GrowthMeter } from "./components/GrowthMeter";
 import { AlgorithmReportPanel } from "./components/AlgorithmReportPanel";
 import { Panel } from "./components/Panel";
 import { isPrime } from "./core/finiteField";
 import { Assignment, Polynomial, evaluateFiniteField, polynomialToString } from "./core/polynomial";
-import { countFiniteFieldSearchSpace, verifyAssignment } from "./core/search";
-import { convert3SatToMq } from "./core/satToMq";
+import { countFiniteFieldSearchSpace } from "./core/search";
 import { analyzeDiophantineInput, DEFAULT_MODULAR_PRIMES } from "./core/diophantineAnalyzer";
 import { runIntegerAssignmentBenchmark, type DeviceBenchmarkResult } from "./core/deviceBenchmark";
 import type { AnalyzeOptions, DiophantineAnalysisResult } from "./core/diophantineTypes";
-import { growthExamples, mqExample } from "./data/examples";
+import { labPresets, type LabPreset } from "./data/examples";
 
 type Screen = "map" | "lab" | "mq";
 
 const screens: Array<{ id: Screen; label: string }> = [
   { id: "map", label: "Введение" },
   { id: "lab", label: "Диофантова лаборатория" },
-  { id: "mq", label: "H10, NP и задача MQ" },
+  { id: "mq", label: "10-ая проблема Гильберта, NP и MQ" },
 ];
 
 function formatAssignment(assignment: Assignment): string {
@@ -25,16 +24,30 @@ function formatAssignment(assignment: Assignment): string {
     .join(", ");
 }
 
+interface MqRunDetail {
+  runNumber: number;
+  checked: number;
+  found: boolean;
+  truncated: boolean;
+  elapsedMs: number;
+  witness: Assignment | null;
+  values: number[] | null;
+  systemLines: string[];
+}
+
 interface MqRunResult {
   p: number;
   variables: number;
   equations: number;
   repeats: number;
   maxChecks: number;
+  searchSpace: number;
   avgChecked: number;
+  avgCoverage: number;
   avgTimeMs: number;
   solvedFraction: number;
   truncatedFraction: number;
+  runs: MqRunDetail[];
 }
 
 function randomInt(maxExclusive: number): number {
@@ -96,11 +109,13 @@ function scanExistenceBruteforce(
   variableNames: string[],
   p: number,
   maxChecks: number,
-): { checked: number; found: boolean; truncated: boolean } {
+): { checked: number; found: boolean; truncated: boolean; witness: Assignment | null; values: number[] | null } {
   const assignment: Assignment = {};
   let checked = 0;
   let found = false;
   let truncated = false;
+  let witness: Assignment | null = null;
+  let values: number[] | null = null;
 
   const visit = (depth: number): void => {
     if (found || truncated) return;
@@ -110,10 +125,13 @@ function scanExistenceBruteforce(
         return;
       }
       checked += 1;
-      const isSolution = system.every(
-        (polynomial) => evaluateFiniteField(polynomial, assignment, p) === 0,
-      );
+      const currentValues = system.map((polynomial) => evaluateFiniteField(polynomial, assignment, p));
+      const isSolution = currentValues.every((value) => value === 0);
       if (isSolution) found = true;
+      if (isSolution) {
+        witness = { ...assignment };
+        values = currentValues;
+      }
       return;
     }
 
@@ -126,7 +144,7 @@ function scanExistenceBruteforce(
   };
 
   visit(0);
-  return { checked, found, truncated };
+  return { checked, found, truncated, witness, values };
 }
 
 function runMqBenchmark(
@@ -137,21 +155,35 @@ function runMqBenchmark(
   maxChecks: number,
 ): MqRunResult {
   const variableNames = Array.from({ length: variableCount }, (_, idx) => `x${idx + 1}`);
+  const searchSpace = countFiniteFieldSearchSpace(variableCount, p);
   let totalChecked = 0;
   let totalTimeMs = 0;
   let solvedRuns = 0;
   let truncatedRuns = 0;
+  const runs: MqRunDetail[] = [];
 
   for (let run = 0; run < repeats; run += 1) {
     const system = createRandomMqSystem(variableNames, equationCount, p);
     const start = performance.now();
     const result = scanExistenceBruteforce(system, variableNames, p, maxChecks);
     const end = performance.now();
+    const elapsedMs = end - start;
 
     totalChecked += result.checked;
-    totalTimeMs += end - start;
+    totalTimeMs += elapsedMs;
     if (result.found) solvedRuns += 1;
     if (result.truncated) truncatedRuns += 1;
+
+    runs.push({
+      runNumber: run + 1,
+      checked: result.checked,
+      found: result.found,
+      truncated: result.truncated,
+      elapsedMs,
+      witness: result.witness,
+      values: result.values,
+      systemLines: system.map((poly) => `${polynomialToString(poly)} = 0`),
+    });
   }
 
   return {
@@ -160,10 +192,13 @@ function runMqBenchmark(
     equations: equationCount,
     repeats,
     maxChecks,
+    searchSpace,
     avgChecked: totalChecked / repeats,
+    avgCoverage: searchSpace > 0 ? totalChecked / repeats / searchSpace : 0,
     avgTimeMs: totalTimeMs / repeats,
     solvedFraction: solvedRuns / repeats,
     truncatedFraction: truncatedRuns / repeats,
+    runs,
   };
 }
 
@@ -197,9 +232,9 @@ function App() {
             Три вкладки: <strong>введение</strong>, затем{" "}
             <strong>«Диофантова лаборатория»</strong> — единый интерфейс для линейных
             случаев, перебора в окне по <code>Z</code> и работы над <code>F_p</code> с
-            пошаговыми отчётами. Раздел про <strong>MQ</strong> — конспект по H10, аналогии
-            для NP и мини-пример сведения 3-SAT к квадратичной системе над{" "}
-            <code>GF(2)</code>. Универсального решателя для всех уравнений над{" "}
+            пошаговыми отчётами. Раздел про <strong>MQ</strong> — расширенный разбор
+            10-ой проблемы Гильберта, связь с NP и интерактивный эксперимент с
+            генерацией случайных систем. Универсального решателя для всех уравнений над{" "}
             <code>Z</code> здесь нет и быть не может.
           </span>
         </div>
@@ -243,6 +278,7 @@ function DiophantineLabScreen({
   const [fMod, setFMod] = useState(true);
   const [fEst, setFEst] = useState(true);
   const [fBounded, setFBounded] = useState(true);
+  const [activePresetId, setActivePresetId] = useState<string>(labPresets[0]?.id ?? "");
   const [result, setResult] = useState<DiophantineAnalysisResult | null>(null);
 
   useEffect(() => {
@@ -251,38 +287,114 @@ function DiophantineLabScreen({
     }
   }, [deviceBenchmark, useDeviceSpeed]);
 
-  const runAnalysis = () => {
-    const flags: AnalyzeOptions["flags"] = autoAll
-      ? {
-          auto: true,
-          linear: true,
-          univariate: true,
-          modular: true,
-          estimate: true,
-          bounded: true,
-        }
+  const allEnabledFlags: AnalyzeOptions["flags"] = {
+    auto: true,
+    linear: true,
+    univariate: true,
+    modular: true,
+    estimate: true,
+    bounded: true,
+  };
+
+  const runAnalysisWith = (params: {
+    text: string;
+    domain: "Z" | "Fp";
+    p: number;
+    limitN: number;
+    maxChecks: number;
+    checksPerSecond: number;
+    useDeviceSpeed: boolean;
+    autoAll: boolean;
+    manualFlags: {
+      linear: boolean;
+      univariate: boolean;
+      modular: boolean;
+      estimate: boolean;
+      bounded: boolean;
+    };
+  }) => {
+    const flags: AnalyzeOptions["flags"] = params.autoAll
+      ? allEnabledFlags
       : {
           auto: false,
-          linear: fLinear,
-          univariate: fUni,
-          modular: fMod,
-          estimate: fEst,
-          bounded: fBounded,
+          linear: params.manualFlags.linear,
+          univariate: params.manualFlags.univariate,
+          modular: params.manualFlags.modular,
+          estimate: params.manualFlags.estimate,
+          bounded: params.manualFlags.bounded,
         };
     const effectiveCps =
-      domain === "Z" && useDeviceSpeed && deviceBenchmark
+      params.domain === "Z" && params.useDeviceSpeed && deviceBenchmark
         ? deviceBenchmark.checksPerSecond
-        : Math.max(1, checksPerSec);
+        : Math.max(1, params.checksPerSecond);
     const opts: AnalyzeOptions = {
-      domain,
-      p: labP,
-      limitN,
+      domain: params.domain,
+      p: params.p,
+      limitN: params.limitN,
       checksPerSecond: effectiveCps,
-      maxChecks: Math.max(100, maxChecks),
+      maxChecks: Math.max(100, params.maxChecks),
       modularPrimes: [...DEFAULT_MODULAR_PRIMES],
       flags,
     };
-    setResult(analyzeDiophantineInput(systemText, opts));
+    setResult(analyzeDiophantineInput(params.text, opts));
+  };
+
+  const runAnalysis = () => {
+    runAnalysisWith({
+      text: systemText,
+      domain,
+      p: labP,
+      limitN,
+      maxChecks,
+      checksPerSecond: checksPerSec,
+      useDeviceSpeed,
+      autoAll,
+      manualFlags: {
+        linear: fLinear,
+        univariate: fUni,
+        modular: fMod,
+        estimate: fEst,
+        bounded: fBounded,
+      },
+    });
+  };
+
+  const applyLabPreset = (preset: LabPreset) => {
+    const presetFlags = preset.flags ?? {
+      linear: true,
+      univariate: true,
+      modular: true,
+      estimate: true,
+      bounded: true,
+    };
+    const nextChecksPerSec = Math.max(1, preset.checksPerSecond ?? checksPerSec);
+
+    setActivePresetId(preset.id);
+    setSystemText(preset.systemText);
+    setDomain(preset.domain);
+    setLabP(preset.p);
+    setLimitN(preset.limitN);
+    setMaxChecks(preset.maxChecks);
+    setAutoAll(preset.autoAll);
+    setUseDeviceSpeed(preset.useDeviceSpeed);
+    setChecksPerSec(nextChecksPerSec);
+    setFLinear(presetFlags.linear);
+    setFUni(presetFlags.univariate);
+    setFMod(presetFlags.modular);
+    setFEst(presetFlags.estimate);
+    setFBounded(presetFlags.bounded);
+
+    runAnalysisWith({
+      text: preset.systemText,
+      domain: preset.domain,
+      p: preset.p,
+      limitN: preset.limitN,
+      maxChecks: preset.maxChecks,
+      checksPerSecond: nextChecksPerSec,
+      useDeviceSpeed: preset.useDeviceSpeed,
+      autoAll: preset.autoAll,
+      manualFlags: presetFlags,
+    });
   };
 
   return (
@@ -295,6 +407,26 @@ function DiophantineLabScreen({
           Уравнения в формате парсера сайта: переменные, <code>+ − * ^</code>, один знак{" "}
           <code>=</code>. Несколько строк — система.
         </p>
+        <div className="labPresetSection">
+          <h3>Готовые примеры (автоподбор режима)</h3>
+          <p className="muted">
+            Выбор примера автоматически подставляет уравнение, область расчета и параметры
+            запуска, затем сразу строит отчет.
+          </p>
+          <div className="labPresetList">
+            {labPresets.map((preset) => (
+              <button
+                type="button"
+                key={preset.id}
+                className={`labPresetButton ${activePresetId === preset.id ? "active" : ""}`}
+                onClick={() => applyLabPreset(preset)}
+              >
+                <strong>{preset.title}</strong>
+                <span>{preset.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <label>
           Система (строки через Enter)
           <textarea value={systemText} onChange={(e) => setSystemText(e.target.value)} />
@@ -432,26 +564,6 @@ function DiophantineLabScreen({
           <button type="button" onClick={runAnalysis}>
             Запустить анализ
           </button>
-          <button
-            type="button"
-            onClick={() =>
-              setSystemText(`x + y = 5\n2*x - y = 1`)
-            }
-          >
-            Пример 2×2
-          </button>
-          <button
-            type="button"
-            onClick={() => setSystemText(`x^2 - 5*x + 6 = 0`)}
-          >
-            Пример квадратное
-          </button>
-          <button
-            type="button"
-            onClick={() => setSystemText(`2*x + 1 = 0`)}
-          >
-            Пример (модуль 2)
-          </button>
         </div>
       </Panel>
 
@@ -476,7 +588,7 @@ function MapScreen() {
   return (
     <Panel title="Две разные математические ситуации" eyebrow="с чего начать">
       <div className="comparison">
-        <article>
+        <article className="comparisonCard comparisonCardZ">
           <h3>Целые числа Z</h3>
           <p>
             Для произвольного многочлена с целыми коэффициентами <strong>не существует</strong>{" "}
@@ -487,7 +599,7 @@ function MapScreen() {
             замена теореме.
           </p>
         </article>
-        <article>
+        <article className="comparisonCard comparisonCardFp">
           <h3>Конечное поле F_p</h3>
           <p>
             Всего <code>p<sup>n</sup></code> наборов значений переменных, поэтому вопрос
@@ -502,18 +614,14 @@ function MapScreen() {
       </div>
       <p className="muted" style={{ marginTop: 16 }}>
         Дальше откройте <strong>«Диофантову лабораторию»</strong> для экспериментов по{" "}
-        <code>Z</code> и <code>F_p</code>, затем раздел про H10, NP и MQ.
+        <code>Z</code> и <code>F_p</code>, затем раздел про 10-ую проблему Гильберта,
+        NP и MQ.
       </p>
     </Panel>
   );
 }
 
 function MqScreen() {
-  const mq = useMemo(() => convert3SatToMq(mqExample.clauses), []);
-  const verification = useMemo(
-    () => verifyAssignment(mq.system, mqExample.satisfyingWitness, 2),
-    [mq],
-  );
   const [benchP, setBenchP] = useState(2);
   const [benchVariables, setBenchVariables] = useState(7);
   const [benchEquations, setBenchEquations] = useState(7);
@@ -522,11 +630,13 @@ function MqScreen() {
   const [benchmarkResult, setBenchmarkResult] = useState<MqRunResult | null>(null);
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const currentSearchSpace = countFiniteFieldSearchSpace(benchVariables, benchP);
+  const safeMaxChecks = Math.max(100, benchMaxChecks);
 
   return (
     <div className="mqScreenGrid">
       <Panel
-        title="H10, NP и MQ: как связаны три уровня сложности"
+        title="10-ая проблема Гильберта, NP и MQ: как связаны три уровня сложности"
         eyebrow="неразрешимость, проверяемость, практический перебор"
       >
         <p>
@@ -542,9 +652,12 @@ function MqScreen() {
         </p>
       </Panel>
 
-      <Panel title="Подробный разбор неразрешимости H10" eyebrow="теоремы и шаги доказательства">
+      <Panel
+        title="Подробный разбор неразрешимости 10-ой проблемы Гильберта"
+        eyebrow="теоремы и шаги доказательства"
+      >
         <details className="collapsible" open>
-          <summary>Шаг 1. Точная постановка H10 и что требуется от алгоритма</summary>
+          <summary>Шаг 1. Точная постановка задачи и критерий алгоритмического решения</summary>
           <div className="collapsibleBody">
             <div className="theorem">
               <h4>Формулировка задачи</h4>
@@ -567,12 +680,20 @@ function MqScreen() {
                 Именно это свойство делает задачу задачей разрешимости, а не просто
                 поиском примеров.
               </li>
+              <li>
+                Важно различать два режима: «поиск одного решения для конкретного
+                примера» и «универсальный решатель для любого входного многочлена».
+              </li>
+              <li>
+                Вся драматургия 10-ой проблемы Гильберта состоит в том, что второй режим
+                в общем случае недостижим.
+              </li>
             </ul>
           </div>
         </details>
 
         <details className="collapsible">
-          <summary>Шаг 2. Полуразрешимость диофантовых уравнений</summary>
+          <summary>Шаг 2. Почему «да»-ответы перечислимы: полуразрешимость</summary>
           <div className="collapsibleBody">
             <div className="theorem">
               <h4>Лемма (полуразрешимость)</h4>
@@ -594,12 +715,21 @@ function MqScreen() {
                 Если решения нет, этот процесс не обязан остановиться. Значит это
                 полуразрешимость, но не полная разрешимость.
               </li>
+              <li>
+                С инженерной точки зрения это похоже на бесконечный тест-ран: наличие
+                контрпримера дает остановку, отсутствие контрпримера — нет гарантии
+                конечного завершения.
+              </li>
+              <li>
+                Ровно поэтому ограниченный перебор в лаборатории всегда сопровождается
+                оговоркой «в окне» или «в рамках лимита проверок».
+              </li>
             </ul>
           </div>
         </details>
 
         <details className="collapsible">
-          <summary>Шаг 3. Теорема MRDP и ключевая мостовая идея</summary>
+          <summary>Шаг 3. Теорема MRDP: мост между вычислимостью и диофантовыми формулами</summary>
           <div className="collapsibleBody">
             <div className="theorem">
               <h4>Теорема MRDP (Davis–Putnam–Robinson–Matiyasevich)</h4>
@@ -622,12 +752,22 @@ function MqScreen() {
                 Следствие: вопросы о вычислимости множеств переносятся в язык
                 диофантовых уравнений.
               </li>
+              <li>
+                Практический смысл: когда мы говорим «существует хитрое множество,
+                которое перечислимо, но неразрешимо», MRDP говорит, что у него есть
+                диофантова маска.
+              </li>
+              <li>
+                Поэтому проблемы вычислимости нельзя изолировать от теории
+                полиномиальных уравнений над целыми — это один и тот же ландшафт в
+                разной записи.
+              </li>
             </ul>
           </div>
         </details>
 
         <details className="collapsible">
-          <summary>Шаг 4. Финал: почему H10 неразрешима</summary>
+          <summary>Шаг 4. Финальный вывод: почему 10-ая проблема Гильберта неразрешима</summary>
           <div className="collapsibleBody">
             <div className="theorem">
               <h4>Следствие</h4>
@@ -645,24 +785,34 @@ function MqScreen() {
                 По MRDP такое множество имеет диофантово представление.
               </li>
               <li>
-                Если бы H10 была разрешима, разрешимым было бы и это множество —
+                Если бы 10-ая проблема Гильберта была разрешима, разрешимым было бы и это множество —
                 противоречие.
+              </li>
+              <li>
+                Следовательно, ограничение принципиальное: дело не в мощности железа, а
+                в самой природе задачи.
+              </li>
+              <li>
+                На практике это означает, что корректная стратегия — строить набор
+                частных алгоритмов и точно описывать область их применимости.
               </li>
             </ul>
             <p>
-              Поэтому отрицательный ответ к H10 — это <strong>принципиальная граница
-              алгоритмов</strong>, а не «нам пока не хватило мощности компьютера».
+              Поэтому отрицательный ответ к 10-ой проблеме Гильберта — это{" "}
+              <strong>принципиальная граница алгоритмов</strong>, а не «нам пока не
+              хватило мощности компьютера».
             </p>
           </div>
         </details>
 
         <details className="collapsible">
-          <summary>Связь с NP и MQ: почему это другой тип трудности</summary>
+          <summary>Шаг 5. Связь с NP и MQ: другой тип трудности</summary>
           <div className="collapsibleBody">
             <div className="theorem">
               <h4>Важно различать</h4>
               <p>
-                H10 над <code>Z</code>: не существует универсального решателя (undecidable).
+                10-ая проблема Гильберта над <code>Z</code>: не существует универсального
+                решателя (undecidable).
                 <br />
                 MQ/NP над конечными полями: решатель в принципе есть (перебор конечного
                 множества), но при росте входа сложность может быть NP-трудной/NP-полной.
@@ -672,103 +822,33 @@ function MqScreen() {
               То есть речь не о противоречии, а о двух разных шкалах:{" "}
               <strong>разрешимость</strong> и <strong>асимптотическая сложность</strong>.
             </p>
+            <ul className="proofList">
+              <li>
+                Для фиксированных <code>p</code> и <code>n</code> пространство поиска
+                конечно: <code>p^n</code>.
+              </li>
+              <li>
+                Однако уже для умеренных <code>n</code> перебор становится дорогим, что
+                приводит к практической вычислительной трудности.
+              </li>
+              <li>
+                Именно этим объясняется смысл экспериментального блока ниже: мы измеряем
+                не «истину теоремы», а поведение времени на конечных входах.
+              </li>
+            </ul>
           </div>
         </details>
       </Panel>
 
-      <Panel title="Наглядные (физические) аналогии для понимания" eyebrow="почему интуиция работает">
-        <div className="analogyCard">
-          <h4>H10: библиотека бесконечных механических головоломок</h4>
-          <p>
-            Представьте библиотеку из бесконечного числа коробок с механическими
-            головоломками одного <em>типа</em> (многочлен — коробка), но с разными
-            настройками. Вопрос: «в каждой ли коробке есть хотя бы одно правильное
-            положение деталей?» Отрицательное решение H10 означает:{" "}
-            <strong>не существует одной инструкции</strong>, по которой вы за конечное
-            время гарантированно получите «да/нет» для <em>любой</em> коробки. Это не
-            значит, что отдельные коробки неразрешимы — отдельные случаи разбираются
-            частными методами (как в <strong>Диофантовой лаборатории</strong>).
-          </p>
-        </div>
-
-        <div className="analogyCard">
-          <h4>NP: быстро проверить пропуск, трудно подобрать все коды</h4>
-          <p>
-            <strong>Проверка свидетельства:</strong> пассажир показывает билет — контролёр
-            за пару секунд подтверждает «билет действителен по правилам». Это похоже на
-            подстановку вектора в многочлены над <code>F_p</code>: несколько арифметических
-            операций по модулю.
-          </p>
-          <p>
-            <strong>Поиск решения:</strong> если билета нет, но нужно «найти правильный
-            набор полей в вагоне», при экспоненциально большом числе комбинаций это уже
-            экспедиция. Для NP-трудных семейств мы не знаем универсального быстрого
-            поиска, но знаем быструю <em>верификацию</em> кандидата — как в режиме{" "}
-            <code>F_p</code> в <strong>Диофантовой лаборатории</strong>.
-          </p>
-        </div>
-
-        <div className="analogyCard">
-          <h4>MQ: система механических замков с взаимными ограничениями</h4>
-          <p>
-            Квадратичные члены <code>xᵢxⱼ</code> похожи на то, что два выбора должны{" "}
-            <strong>согласоваться</strong>: положение одного диска влияет на допустимость
-            другого. Система MQ задаёт несколько таких «замков» сразу; подобрать все
-            коды с нуля может быть тяжело, но <strong>выставили код — проверить защёлки</strong>{" "}
-            (подставить в уравнения) быстро.
-          </p>
-          <p>
-            Связь с H10: сами по себе это <strong>разные миры</strong> — над{" "}
-            <code>Z</code> нет общего разрешателя существования корня, над{" "}
-            <code>F_pⁿ</code> с фиксированным <code>p</code> и <code>n</code> вопрос
-            конечен. NP-полнота MQ описывает <strong>рост сложности при больших входах</strong>,
-            а не «неразрешимость в смысле Тьюринга» на конечном поле.
-          </p>
-        </div>
-      </Panel>
-
-      <Panel title="Практика 1: мини-сведение 3-SAT → MQ над GF(2)" eyebrow="что именно можно запустить и проверить">
-        <p>
-          Булевы переменные кодируются как <code>0</code> или <code>1</code> в{" "}
-          <code>GF(2)</code>. Литерал «не <code>x</code>» записывается как{" "}
-          <code>1 + x</code>. Дизъюнкт ложен, если ложны все три литерала; их «ложность»
-          перемножается — получается степень до трёх, поэтому вводится вспомогательная
-          переменная <code>yᵢ</code>, чтобы оставить только <strong>квадратичные</strong>{" "}
-          ограничения (схема MQ).
-        </p>
-        <div className="steps">
-          {mq.steps.map((step) => (
-            <article key={step.title}>
-              <strong>{step.title}</strong>
-              <p>{step.detail}</p>
-            </article>
-          ))}
-        </div>
-        <h3>Система (каждая строка = 0 в GF(2))</h3>
-        <div className="solutionList vertical">
-          {mq.system.map((polynomial, index) => (
-            <code key={`${polynomialToString(polynomial)}-${index}`}>
-              {polynomialToString(polynomial)} = 0
-            </code>
-          ))}
-        </div>
-        <p>
-          <strong>Свидетельство (вектор, который нужно только проверить):</strong>{" "}
-          <code>{formatAssignment(mqExample.satisfyingWitness)}</code>
-        </p>
-        <p className={verification.isSolution ? "status good" : "status bad"}>
-          Значения левых частей после подстановки: {verification.values.join(", ")}.{" "}
-          {verification.isSolution
-            ? "Все обнулись в GF(2) — кандидат действительно удовлетворяет системе."
-            : "Есть ненулевой остаток — кандидат не решение."}
-        </p>
-      </Panel>
-
-      <Panel title="Практика 2: запуск случайной MQ-задачи и измерение сложности" eyebrow="эксперимент с временем и числом проверок">
+      <Panel
+        title="Интерактивный эксперимент MQ: генерация системы и поиск решений"
+        eyebrow="эксперимент с временем, покрытием пространства и найденными свидетельствами"
+      >
         <p>
           Ниже можно запустить серию случайных квадратичных систем над{" "}
           <code>F_p</code>. Алгоритм — честный перебор по <code>F_p^n</code> с лимитом
-          проверок. Это демонстрирует, как быстро растут затраты даже в конечном поле.
+          проверок. Теперь для каждого прогона выводится сама система, статус поиска и
+          найденный вектор (если он существует).
         </p>
         <div className="benchmarkGrid">
           <label>
@@ -877,6 +957,11 @@ function MqScreen() {
               <strong>{Math.round(benchmarkResult.avgChecked).toLocaleString("ru-RU")}</strong>.
             </p>
             <p>
+              Среднее покрытие пространства:{" "}
+              <strong>{(benchmarkResult.avgCoverage * 100).toFixed(2)}%</strong> из{" "}
+              <code>{benchmarkResult.searchSpace.toLocaleString("ru-RU")}</code>.
+            </p>
+            <p>
               Среднее время на запуск:{" "}
               <strong>{benchmarkResult.avgTimeMs.toFixed(2)} мс</strong>.
             </p>
@@ -893,19 +978,84 @@ function MqScreen() {
               делает полный поиск тяжелым. Это и есть практическая мотивация сложности
               для MQ/NP-постановок.
             </p>
+
+            <div className="mqRunsGrid">
+              {benchmarkResult.runs.map((run) => (
+                <article className="mqRunCard" key={`mq-run-${run.runNumber}`}>
+                  <header>
+                    <h4>Прогон #{run.runNumber}</h4>
+                    <span
+                      className={`reportStatusPill ${
+                        run.found
+                          ? "is-solved"
+                          : run.truncated
+                            ? "is-bounded"
+                            : "is-no-solution"
+                      }`}
+                    >
+                      {run.found ? "решение найдено" : run.truncated ? "усечен лимитом" : "решение не найдено"}
+                    </span>
+                  </header>
+                  <p className="muted">
+                    Проверено: <strong>{run.checked.toLocaleString("ru-RU")}</strong> /{" "}
+                    {benchmarkResult.searchSpace.toLocaleString("ru-RU")} · время{" "}
+                    <strong>{run.elapsedMs.toFixed(2)} мс</strong>
+                  </p>
+                  <details className="collapsible">
+                    <summary>Показать сгенерированную MQ-систему</summary>
+                    <div className="collapsibleBody">
+                      <div className="solutionList vertical">
+                        {run.systemLines.map((line, index) => (
+                          <code key={`mq-eq-${run.runNumber}-${index}`}>{line}</code>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                  {run.witness ? (
+                    <p className="algorithmResult">
+                      <strong>Найденный вектор:</strong> <code>{formatAssignment(run.witness)}</code>
+                      <br />
+                      <strong>Проверка левых частей:</strong>{" "}
+                      <code>{run.values?.join(", ") ?? "—"}</code>
+                    </p>
+                  ) : (
+                    <p className="muted">
+                      {run.truncated
+                        ? "По этому прогону поиск остановлен лимитом проверок."
+                        : "Для данного прогона корректного вектора в просмотренной области не найдено."}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
           </div>
         ) : null}
       </Panel>
 
-      <Panel title="Как быстро растёт полный перебор по F_p^n" eyebrow="почему «конечно» ≠ «быстро»">
-        {growthExamples.map((item) => (
-          <GrowthMeter
-            key={item.label}
-            label={item.label}
-            value={countFiniteFieldSearchSpace(item.variables, item.p)}
-            max={countFiniteFieldSearchSpace(20, 2)}
-          />
-        ))}
+      <Panel
+        title="Динамика сложности под выбранные параметры"
+        eyebrow="нижний блок связан с текущей конфигурацией эксперимента"
+      >
+        <GrowthMeter
+          label={`Размер пространства F_${benchP}^${benchVariables}`}
+          value={currentSearchSpace}
+          max={Math.max(currentSearchSpace, safeMaxChecks, 1)}
+        />
+        <GrowthMeter
+          label="Лимит проверок за запуск"
+          value={safeMaxChecks}
+          max={Math.max(currentSearchSpace, safeMaxChecks, 1)}
+        />
+        <GrowthMeter
+          label="Среднее число проверенных (последний эксперимент)"
+          value={Math.max(1, Math.round(benchmarkResult?.avgChecked ?? 1))}
+          max={Math.max(currentSearchSpace, safeMaxChecks, 1)}
+        />
+        <GrowthMeter
+          label="Среднее покрытие пространства (доля, %)"
+          value={Math.max(1, Math.round((benchmarkResult?.avgCoverage ?? 0) * 100))}
+          max={100}
+        />
       </Panel>
     </div>
   );
